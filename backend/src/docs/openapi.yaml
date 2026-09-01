@@ -1,0 +1,201 @@
+openapi: 3.0.3
+info:
+  title: ALMOX//CTRL API
+  version: "1.0.0"
+  description: >
+    API de controle de estoque. Este documento cobre os endpoints
+    principais como referência de padrão (auth, products, movements).
+    Os demais endpoints (vehicles, assets, users, reports, dashboard)
+    seguem exatamente a mesma convenção de autenticação, RBAC e
+    formato de erro — replique o padrão ao documentá-los.
+servers:
+  - url: /api
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message: { type: string }
+            details: { type: array, items: { type: object } }
+    Product:
+      type: object
+      properties:
+        id: { type: integer }
+        codigo: { type: string, example: "PNEU-295" }
+        nome: { type: string, example: "Pneu 295/80 R22.5" }
+        categoria: { type: string, enum: [FR, CO, IP, MI] }
+        unidade: { type: string, example: "un" }
+        estoque_minimo: { type: number }
+        estoque_atual: { type: number }
+    Movement:
+      type: object
+      properties:
+        id: { type: integer }
+        product_id: { type: integer }
+        type: { type: string, enum: [entrada, saida] }
+        quantidade: { type: number }
+        referencia: { type: string }
+        data_movimentacao: { type: string, format: date-time }
+paths:
+  /auth/login:
+    post:
+      summary: Autentica um usuário e retorna access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, senha]
+              properties:
+                email: { type: string, format: email }
+                senha: { type: string, format: password }
+      responses:
+        '200':
+          description: Login bem-sucedido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken: { type: string }
+                  user: { type: object }
+        '401':
+          description: Credenciais inválidas
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Muitas tentativas de login
+
+  /auth/refresh-token:
+    post:
+      summary: Renova o access token usando o refresh token (cookie httpOnly)
+      responses:
+        '200':
+          description: Novo access token emitido
+        '401':
+          description: Refresh token ausente, inválido ou revogado
+
+  /auth/logout:
+    post:
+      summary: Revoga o refresh token atual
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204':
+          description: Logout efetuado
+
+  /products:
+    get:
+      summary: Lista produtos com filtros e paginação
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: categoria
+          schema: { type: string, enum: [FR, CO, IP, MI] }
+        - in: query
+          name: estoque_baixo
+          schema: { type: boolean }
+        - in: query
+          name: busca
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: Lista paginada de produtos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Product' } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+    post:
+      summary: Cria um produto (admin/gestor)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Product' }
+      responses:
+        '201':
+          description: Produto criado
+        '409':
+          description: Código já existe
+        '422':
+          description: Dados inválidos
+
+  /products/import-csv:
+    post:
+      summary: Importa produtos em massa via CSV (multipart/form-data, campo "file")
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: Resumo da importação (importados/ignorados/erros)
+
+  /movements:
+    get:
+      summary: Lista movimentações com filtros
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: data_inicio
+          schema: { type: string, format: date }
+        - in: query
+          name: data_fim
+          schema: { type: string, format: date }
+        - in: query
+          name: tipo
+          schema: { type: string, enum: [entrada, saida] }
+        - in: query
+          name: categoria
+          schema: { type: string, enum: [FR, CO, IP, MI] }
+      responses:
+        '200':
+          description: Lista de movimentações
+    post:
+      summary: Registra uma movimentação (transaction atômica + trava de linha)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productId, type, quantidade]
+              properties:
+                productId: { type: integer }
+                type: { type: string, enum: [entrada, saida] }
+                quantidade: { type: number }
+                referencia: { type: string }
+                observacao: { type: string }
+                vehiclePlaca: { type: string }
+      responses:
+        '201':
+          description: Movimentação registrada
+        '400':
+          description: Saída maior que o estoque atual
