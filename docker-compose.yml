@@ -1,0 +1,74 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-almox_ctrl}
+      POSTGRES_USER: ${DB_USER:-almox_app}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-troque-esta-senha}
+    volumes:
+      - almox_db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-almox_app}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Cache de dashboard (5 min) e de listagens de produtos/veículos
+    # (10 min, invalidado por versão a cada mutação) — ver
+    # backend/src/utils/cache.js. Se este serviço cair, a API não é
+    # afetada: só deixa de cachear e volta a consultar o Postgres direto.
+    ports:
+      - "6379:6379"
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    env_file: ./backend/.env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # Mesma origem via reverse proxy em produção -> CORS praticamente
+      # não entra em jogo, mas mantemos configurável para o caso de o
+      # frontend ser servido de outro domínio.
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "3000:3000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Caminho relativo: como o Nginx raiz expõe a API em /api/ na
+        # MESMA origem do frontend, não precisa de URL absoluta aqui.
+        VITE_API_URL: /api
+    restart: unless-stopped
+    # Não expõe porta própria para fora — só o Nginx raiz é público.
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+      - frontend
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "80:80"
+
+volumes:
+  almox_db_data:

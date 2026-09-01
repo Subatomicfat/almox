@@ -1,0 +1,89 @@
+# Arquivo de produção STANDALONE — não é um "override" do
+# docker-compose.yml base, é um arquivo completo por si só.
+#
+# Motivo: Docker Compose mescla `build:` e `image:` de forma ambígua
+# quando você combina múltiplos arquivos (o serviço acaba com os dois
+# campos, e o comportamento de "buildar local vs. puxar do registry"
+# varia de versão para versão do Compose). Um arquivo standalone sem
+# nenhum `build:` remove essa ambiguidade: aqui só existe `image:`,
+# então `docker compose pull` sempre puxa do GHCR, nunca builda local.
+#
+# Uso:
+#   cp .env.example .env   (defina GHCR_NAMESPACE = seu-usuario/seu-repo)
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Pré-requisito: as imagens já precisam ter sido publicadas no GHCR
+# pelo workflow .github/workflows/deploy.yml (job build_and_push).
+
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-almox_ctrl}
+      POSTGRES_USER: ${DB_USER:-almox_app}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-troque-esta-senha}
+    volumes:
+      - almox_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-almox_app}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Sem `ports:` publicado aqui de propósito — em produção o banco
+    # não deve ficar acessível fora da rede interna do Docker
+    # (ver DEPLOY_CHECKLIST.md, seção "Rede e segurança").
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  api:
+    image: ghcr.io/${GHCR_NAMESPACE}-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file: ./backend/.env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      NODE_ENV: production
+      CORS_ORIGIN: https://${DOMAIN}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  frontend:
+    image: ghcr.io/${GHCR_NAMESPACE}-frontend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+      - frontend
+    volumes:
+      - ./nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    ports:
+      - "80:80"
+      - "443:443"
+
+  certbot:
+    image: certbot/certbot
+    restart: unless-stopped
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: >
+      /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done;"
+
+volumes:
+  almox_db_data:
