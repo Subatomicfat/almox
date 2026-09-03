@@ -1,4 +1,4 @@
-const { createClient } = require('redis');
+cconst { createClient } = require('redis');
 const env = require('../config/env');
 const logger = require('../utils/logger');
 
@@ -14,11 +14,27 @@ let available = false;
  */
 async function connect() {
   if (client) return;
-  client = createClient({ url: env.redis.url });
+  client = createClient({
+    url: env.redis.url,
+    socket: {
+      // Cache é opcional. Sem isso, o cliente do Redis tenta
+      // reconectar automaticamente PARA SEMPRE (a cada ~500ms com
+      // backoff) quando não encontra o servidor — o que inunda os
+      // logs de produção quando REDIS_URL/REDIS_HOST simplesmente não
+      // foi configurado na plataforma de deploy (cenário normal, não
+      // um erro transitório de rede que valeria retry). Falha uma vez
+      // e segue sem cache.
+      reconnectStrategy: false
+    }
+  });
 
+  let avisouUmaVez = false;
   client.on('error', (err) => {
     available = false;
-    logger.warn('Redis indisponível — seguindo sem cache.', { error: err.message });
+    if (!avisouUmaVez) {
+      avisouUmaVez = true;
+      logger.warn('Redis indisponível — seguindo sem cache (sem retry automático).', { error: err.message });
+    }
   });
   client.on('connect', () => { available = true; });
 
@@ -82,3 +98,4 @@ async function disconnect() {
 }
 
 module.exports = { connect, disconnect, getJSON, setJSON, bumpVersion, getVersion, withCache, isAvailable: () => available };
+
