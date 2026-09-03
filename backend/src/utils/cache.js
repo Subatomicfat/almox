@@ -1,4 +1,4 @@
-cconst { createClient } = require('redis');
+const { createClient } = require('redis');
 const env = require('../config/env');
 const logger = require('../utils/logger');
 
