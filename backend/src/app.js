@@ -15,6 +15,13 @@ const { errorHandler, notFoundHandler } = require('./middlewares/errorHandler.mi
 
 const app = express();
 
+// Plataformas como Render, Railway e o Nginx do nosso próprio
+// docker-compose.prod.yml ficam na frente da API como reverse proxy —
+// sem isso, o Express não confia no header X-Forwarded-For, e tanto
+// req.ip quanto o express-rate-limit acabam identificando todo mundo
+// pelo IP interno do proxy (::1), em vez do IP real de quem acessou.
+app.set('trust proxy', 1);
+
 // Security headers, incluindo Content-Security-Policy (proteção contra XSS)
 app.use(helmet({
   contentSecurityPolicy: {
