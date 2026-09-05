@@ -8,7 +8,7 @@ export const loginSchema = yup.object({
 export const productSchema = yup.object({
   codigo: yup.string().trim().max(30, 'Máximo 30 caracteres.').required('Código obrigatório.'),
   nome: yup.string().trim().max(160).required('Nome obrigatório.'),
-  categoria: yup.string().oneOf(['FR', 'CO', 'IP', 'MI'], 'Selecione uma categoria.').required('Categoria obrigatória.'),
+  categoria: yup.string().oneOf(['FR', 'CO', 'IP', 'MI', 'MP'], 'Selecione uma categoria.').required('Categoria obrigatória.'),
   unidade: yup.string().trim().max(10).required('Unidade obrigatória.'),
   estoqueMinimo: yup.number().typeError('Deve ser um número.').min(0, 'Não pode ser negativo.').required('Obrigatório.'),
   estoqueAtual: yup.number().typeError('Deve ser um número.').min(0, 'Não pode ser negativo.').required('Obrigatório.')

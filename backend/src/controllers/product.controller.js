@@ -96,7 +96,7 @@ const importCsv = asyncHandler(async (req, res) => {
   const cabecalho = linhas[0].toLowerCase();
   if (cabecalho.includes('codigo') || cabecalho.includes('código') || cabecalho.includes('nome')) inicio = 1;
 
-  const categoriasValidas = ['FR', 'CO', 'IP', 'MI'];
+  const categoriasValidas = ['FR', 'CO', 'IP', 'MI', 'MP'];
   let importados = 0, ignorados = 0, erros = 0;
   const detalhesErros = [];
 
@@ -111,7 +111,7 @@ const importCsv = asyncHandler(async (req, res) => {
     const atual = parseFloat(atualRaw);
 
     if (!codigo || !nome || !categoriasValidas.includes(categoria) || isNaN(minimo) || isNaN(atual)) {
-      erros++; detalhesErros.push({ linha: i + 1, motivo: 'Dados inválidos ou categoria fora de FR/CO/IP/MI' }); continue;
+      erros++; detalhesErros.push({ linha: i + 1, motivo: 'Dados inválidos ou categoria fora de FR/CO/IP/MI/MP' }); continue;
     }
 
     const existing = await productRepository.findByCodigo(codigo);

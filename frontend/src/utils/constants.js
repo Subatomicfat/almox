@@ -2,7 +2,8 @@ export const CATEGORIAS = [
   { value: 'FR', label: 'Frota de Veículos (FR)' },
   { value: 'CO', label: 'Ativos em Comodato (CO)' },
   { value: 'IP', label: 'Insumos de Produção (IP)' },
-  { value: 'MI', label: 'Manutenção Industrial (MI)' }
+  { value: 'MI', label: 'Manutenção Industrial (MI)' },
+  { value: 'MP', label: 'Manutenção Predial (MP)' }
 ];
 
 export const ASSET_STATUSES = [

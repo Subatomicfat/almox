@@ -31,7 +31,7 @@ components:
         id: { type: integer }
         codigo: { type: string, example: "PNEU-295" }
         nome: { type: string, example: "Pneu 295/80 R22.5" }
-        categoria: { type: string, enum: [FR, CO, IP, MI] }
+        categoria: { type: string, enum: [FR, CO, IP, MI, MP] }
         unidade: { type: string, example: "un" }
         estoque_minimo: { type: number }
         estoque_atual: { type: number }
@@ -100,7 +100,7 @@ paths:
       parameters:
         - in: query
           name: categoria
-          schema: { type: string, enum: [FR, CO, IP, MI] }
+          schema: { type: string, enum: [FR, CO, IP, MI, MP] }
         - in: query
           name: estoque_baixo
           schema: { type: boolean }
@@ -173,7 +173,7 @@ paths:
           schema: { type: string, enum: [entrada, saida] }
         - in: query
           name: categoria
-          schema: { type: string, enum: [FR, CO, IP, MI] }
+          schema: { type: string, enum: [FR, CO, IP, MI, MP] }
       responses:
         '200':
           description: Lista de movimentações

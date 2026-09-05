@@ -104,7 +104,7 @@ export default function UsersPage() {
                 {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
               </select>
             </div>
-            <div><label>Departamento</label><input {...createForm.register('departamento')} placeholder="FR, CO, IP, MI, Geral..." /></div>
+            <div><label>Departamento</label><input {...createForm.register('departamento')} placeholder="FR, CO, IP, MI, MP, Geral..." /></div>
           </div>
           <div className="form-actions">
             <button type="submit" className="btn btn-primary" disabled={createForm.formState.isSubmitting}>Criar usuário</button>

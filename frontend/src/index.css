@@ -21,6 +21,8 @@
   --gold-soft:#F6E9C9;
   --rust:#A6472B;
   --rust-soft:#F3DFD7;
+  --slate:#3E7C89;
+  --slate-soft:#DCEEF1;
   --radius:10px;
   --radius-sm:6px;
   --shadow-sm:0 1px 2px rgba(27,36,48,.08);
@@ -46,6 +48,7 @@
   --purple-soft:#241B3A;
   --gold-soft:#2E2508;
   --rust-soft:#301C14;
+  --slate-soft:#123138;
 }
 
 *{box-sizing:border-box;}
@@ -148,6 +151,7 @@ tbody tr:hover{background:var(--paper);}
 .badge-co{background:var(--purple-soft);color:var(--purple);}
 .badge-ip{background:var(--gold-soft);color:var(--gold);}
 .badge-mi{background:var(--rust-soft);color:var(--rust);}
+.badge-mp{background:var(--slate-soft);color:var(--slate);}
 .status-low{color:var(--red);font-weight:600;}
 .status-ok{color:var(--teal);font-weight:600;}
 

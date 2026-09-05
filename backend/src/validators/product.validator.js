@@ -1,11 +1,11 @@
 const { body, query, param } = require('express-validator');
 
-const CATEGORIAS = ['FR', 'CO', 'IP', 'MI'];
+const CATEGORIAS = ['FR', 'CO', 'IP', 'MI', 'MP'];
 
 const createRules = [
   body('codigo').isString().trim().isLength({ min: 1, max: 30 }).withMessage('Código obrigatório (máx. 30 caracteres).'),
   body('nome').isString().trim().isLength({ min: 1, max: 160 }).withMessage('Nome obrigatório.'),
-  body('categoria').isIn(CATEGORIAS).withMessage('Categoria deve ser FR, CO, IP ou MI.'),
+  body('categoria').isIn(CATEGORIAS).withMessage('Categoria deve ser FR, CO, IP, MI ou MP.'),
   body('unidade').isString().trim().isLength({ min: 1, max: 10 }).withMessage('Unidade obrigatória.'),
   body('estoqueMinimo').optional().isFloat({ min: 0 }).withMessage('Estoque mínimo não pode ser negativo.'),
   body('estoqueAtual').optional().isFloat({ min: 0 }).withMessage('Estoque atual não pode ser negativo.')
