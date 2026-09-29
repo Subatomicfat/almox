@@ -137,6 +137,21 @@
           }
         },
         {
+          "name": "Registrar movimentação (entrada com custo/NF)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": 1,\n  \"type\": \"entrada\",\n  \"quantidade\": 15,\n  \"fornecedor\": \"Distribuidora XYZ\",\n  \"numeroNf\": \"1017363\",\n  \"valorUnitario\": 257.05\n}"
+            },
+            "url": "{{baseUrl}}/movements"
+          }
+        },
+        {
           "name": "Registrar movimentação (saída)",
           "request": {
             "method": "POST",
@@ -170,6 +185,14 @@
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
             "url": "{{baseUrl}}/reports/consumo-categoria"
+          }
+        },
+        {
+          "name": "Kardex do produto",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": "{{baseUrl}}/reports/kardex/1"
           }
         }
       ]

@@ -18,7 +18,7 @@ const getById = asyncHandler(async (req, res) => {
 });
 
 const create = asyncHandler(async (req, res) => {
-  const { productId, type, quantidade, referencia, observacao, vehiclePlaca } = req.body;
+  const { productId, type, quantidade, referencia, observacao, vehiclePlaca, fornecedor, numeroNf, valorUnitario } = req.body;
 
   let vehicleId = null;
   if (vehiclePlaca) {
@@ -28,7 +28,8 @@ const create = asyncHandler(async (req, res) => {
   }
 
   const movement = await movementRepository.create({
-    productId, type, quantidade, userId: req.user.id, vehicleId, referencia, observacao, ip: req.ip
+    productId, type, quantidade, userId: req.user.id, vehicleId, referencia, observacao, ip: req.ip,
+    fornecedor, numeroNf, valorUnitario
   });
   res.status(201).json(movement);
 });
@@ -38,9 +39,10 @@ const create = asyncHandler(async (req, res) => {
 // movimentação de ajuste, nunca como edição da linha original
 // (ver regra de negócio em movement.repository.js).
 const adjust = asyncHandler(async (req, res) => {
-  const { type, quantidade, justificativa } = req.body;
+  const { type, quantidade, justificativa, fornecedor, numeroNf, valorUnitario } = req.body;
   const adjustment = await movementRepository.createAdjustment({
-    originalMovementId: req.params.id, type, quantidade, userId: req.user.id, justificativa, ip: req.ip
+    originalMovementId: req.params.id, type, quantidade, userId: req.user.id, justificativa, ip: req.ip,
+    fornecedor, numeroNf, valorUnitario
   });
   res.status(201).json(adjustment);
 });

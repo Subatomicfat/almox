@@ -39,11 +39,11 @@ async function findByCodigo(codigo) {
   return rows[0] || null;
 }
 
-async function create({ codigo, nome, categoria, unidade, estoqueMinimo, estoqueAtual }) {
+async function create({ codigo, nome, categoria, unidade, estoqueMinimo, estoqueAtual, custoMedio }) {
   const { rows } = await query(
-    `INSERT INTO products (codigo, nome, categoria, unidade, estoque_minimo, estoque_atual)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [codigo, nome, categoria, unidade, estoqueMinimo, estoqueAtual]
+    `INSERT INTO products (codigo, nome, categoria, unidade, estoque_minimo, estoque_atual, custo_medio)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [codigo, nome, categoria, unidade, estoqueMinimo, estoqueAtual, custoMedio ?? 0]
   );
   return rows[0];
 }

@@ -52,6 +52,68 @@ async function run() {
         CHECK (categoria IN ('FR','CO','IP','MI','MP'));
     `);
 
+    // Patch: campos de custo/Kardex (fornecedor, nº NF, custo unitário,
+    // custo médio ponderado e valor de estoque) — pedido depois do
+    // lançamento inicial, para o registro de movimentação funcionar
+    // como um Kardex tradicional (ver MIGRATION_GUIDE.md).
+    await client.query(`
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS custo_medio NUMERIC(14,4) NOT NULL DEFAULT 0;
+    `);
+    await client.query(`
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS valor_estoque NUMERIC(16,2)
+        GENERATED ALWAYS AS (estoque_atual * custo_medio) STORED;
+    `);
+    await client.query(`
+      ALTER TABLE movements ADD COLUMN IF NOT EXISTS fornecedor VARCHAR(160);
+    `);
+    await client.query(`
+      ALTER TABLE movements ADD COLUMN IF NOT EXISTS numero_nf VARCHAR(60);
+    `);
+    await client.query(`
+      ALTER TABLE movements ADD COLUMN IF NOT EXISTS valor_unitario NUMERIC(14,4);
+    `);
+    await client.query(`
+      ALTER TABLE movements ADD COLUMN IF NOT EXISTS valor_total NUMERIC(16,2)
+        GENERATED ALWAYS AS (quantidade * valor_unitario) STORED;
+    `);
+
+    // Patch: substitui a função do trigger de estoque pela versão que
+    // também calcula custo médio ponderado. Precisa ser reaplicado
+    // aqui (não só no schema.sql) porque, num banco que já existia, o
+    // bloco do schema.sql inteiro aborta no primeiro "already exists"
+    // antes de chegar nesse CREATE OR REPLACE — ver comentário acima.
+    await client.query(`
+      CREATE OR REPLACE FUNCTION fn_atualizar_estoque()
+      RETURNS TRIGGER AS $BODY$
+      DECLARE
+        estoque_anterior  NUMERIC(12,2);
+        custo_anterior    NUMERIC(14,4);
+        novo_custo_medio  NUMERIC(14,4);
+      BEGIN
+        SELECT estoque_atual, custo_medio INTO estoque_anterior, custo_anterior
+        FROM products WHERE id = NEW.product_id;
+
+        IF NEW.type = 'entrada' THEN
+          IF NEW.valor_unitario IS NOT NULL AND (estoque_anterior + NEW.quantidade) > 0 THEN
+            novo_custo_medio := ((estoque_anterior * custo_anterior) + (NEW.quantidade * NEW.valor_unitario))
+                                 / (estoque_anterior + NEW.quantidade);
+            UPDATE products SET estoque_atual = estoque_atual + NEW.quantidade,
+                                 custo_medio = novo_custo_medio,
+                                 updated_at = NOW()
+            WHERE id = NEW.product_id;
+          ELSE
+            UPDATE products SET estoque_atual = estoque_atual + NEW.quantidade, updated_at = NOW()
+            WHERE id = NEW.product_id;
+          END IF;
+        ELSE
+          UPDATE products SET estoque_atual = estoque_atual - NEW.quantidade, updated_at = NOW()
+          WHERE id = NEW.product_id;
+        END IF;
+        RETURN NEW;
+      END;
+      $BODY$ LANGUAGE plpgsql;
+    `);
+
     console.log('Patches aplicados com sucesso.');
   } finally {
     client.release();

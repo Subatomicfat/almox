@@ -1,4 +1,5 @@
 const reportRepository = require('../repositories/report.repository');
+const productRepository = require('../repositories/product.repository');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
 
@@ -24,6 +25,19 @@ const atividadeUsuario = asyncHandler(async (req, res) => {
   const { user_id: userId, data_inicio: dataInicio, data_fim: dataFim } = req.query;
   const dados = await reportRepository.atividadePorUsuario({ userId, dataInicio, dataFim });
   res.json(dados);
+});
+
+/**
+ * Kardex de um produto — o "cabeçalho" (produto, código, unidade,
+ * estoque mín/máx, custo médio e valor de estoque atuais) mais o
+ * "corpo" (histórico linha a linha com saldo acumulado), no mesmo
+ * formato da planilha de referência que a cliente enviou (OVAM 25).
+ */
+const kardexProduto = asyncHandler(async (req, res) => {
+  const produto = await productRepository.findById(req.params.productId);
+  if (!produto) throw ApiError.notFound('Produto não encontrado.');
+  const historico = await reportRepository.kardexPorProduto(produto.id);
+  res.json({ produto, historico });
 });
 
 /**
@@ -57,8 +71,19 @@ const exportCsv = asyncHandler(async (req, res) => {
     cabecalho = 'usuario;tipo;total_movimentacoes;quantidade_total';
     linhas = dados.map((d) => [d.nome, d.type, d.total_movimentacoes, d.quantidade_total].join(';'));
     nomeArquivo = 'atividade_usuario.csv';
+  } else if (relatorio === 'kardex') {
+    if (!req.body.productId) throw ApiError.badRequest('Informe "productId" no corpo da requisição.');
+    const produto = await productRepository.findById(req.body.productId);
+    if (!produto) throw ApiError.notFound('Produto não encontrado.');
+    const dados = await reportRepository.kardexPorProduto(req.body.productId);
+    cabecalho = 'data;nf;fornecedor;tipo;quantidade;custo_unitario;valor_total;saldo_qtd;saldo_valor;responsavel';
+    linhas = dados.map((d) => [
+      d.data_movimentacao, d.numero_nf || '', d.fornecedor || '', d.type, d.quantidade,
+      d.valor_unitario ?? '', d.valor_total ?? '', d.saldo_qtd, d.saldo_valor, d.responsavel
+    ].join(';'));
+    nomeArquivo = `kardex_${produto.codigo}.csv`;
   } else {
-    throw ApiError.badRequest('Relatório desconhecido. Use: estoque-baixo, consumo-categoria, consumo-veiculo ou atividade-usuario.');
+    throw ApiError.badRequest('Relatório desconhecido. Use: estoque-baixo, consumo-categoria, consumo-veiculo, atividade-usuario ou kardex.');
   }
 
   const csv = '\ufeff' + [cabecalho, ...linhas].join('\n');
@@ -67,4 +92,4 @@ const exportCsv = asyncHandler(async (req, res) => {
   res.send(csv);
 });
 
-module.exports = { consumoVeiculo, consumoCategoria, estoqueBaixo, atividadeUsuario, exportCsv };
+module.exports = { consumoVeiculo, consumoCategoria, estoqueBaixo, atividadeUsuario, kardexProduto, exportCsv };

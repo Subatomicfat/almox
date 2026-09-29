@@ -9,12 +9,19 @@ const auditRepository = require('./audit.repository');
  *      uma saída que, juntas, deixariam o estoque negativo.
  *   2. Revalida a regra "saída não pode exceder o estoque atual"
  *      com o valor travado (não com o valor lido antes da transaction).
- *   3. Insere a movimentação — o trigger fn_atualizar_estoque cuida de
- *      somar/subtrair products.estoque_atual.
- *   4. Insere o registro de auditoria na MESMA transaction: se qualquer
+ *   3. Decide o valor_unitario da movimentação: em ENTRADA é o que o
+ *      usuário informou (opcional — pode não custar nada registrar);
+ *      em SAÍDA nunca vem do usuário, é travado no custo médio do
+ *      produto NESTE exato momento (o produto já está com FOR UPDATE,
+ *      então não existe corrida). É isso que faz o Kardex baixar pelo
+ *      custo certo sem o usuário ter que calcular/lembrar na mão.
+ *   4. Insere a movimentação — o trigger fn_atualizar_estoque cuida de
+ *      somar/subtrair estoque_atual e recalcular o custo médio quando
+ *      for entrada com custo informado.
+ *   5. Insere o registro de auditoria na MESMA transaction: se qualquer
  *      passo falhar, tudo é desfeito (ROLLBACK) e nada fica "meio feito".
  */
-async function create({ productId, type, quantidade, userId, vehicleId, referencia, observacao, ip }) {
+async function create({ productId, type, quantidade, userId, vehicleId, referencia, observacao, ip, fornecedor, numeroNf, valorUnitario }) {
   return withTransaction(async (client) => {
     const { rows: productRows } = await client.query(
       'SELECT * FROM products WHERE id = $1 AND ativo = TRUE FOR UPDATE',
@@ -30,10 +37,15 @@ async function create({ productId, type, quantidade, userId, vehicleId, referenc
       );
     }
 
+    const valorUnitarioFinal = type === 'entrada'
+      ? (valorUnitario != null && valorUnitario !== '' ? valorUnitario : null)
+      : Number(product.custo_medio);
+
     const { rows } = await client.query(
-      `INSERT INTO movements (product_id, type, quantidade, user_id, vehicle_id, referencia, observacao)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [productId, type, quantidade, userId, vehicleId || null, referencia || null, observacao || null]
+      `INSERT INTO movements (product_id, type, quantidade, user_id, vehicle_id, referencia, observacao, fornecedor, numero_nf, valor_unitario)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      [productId, type, quantidade, userId, vehicleId || null, referencia || null, observacao || null,
+        (type === 'entrada' ? fornecedor : null) || null, (type === 'entrada' ? numeroNf : null) || null, valorUnitarioFinal]
     );
     const movement = rows[0];
 
@@ -57,7 +69,7 @@ async function create({ productId, type, quantidade, userId, vehicleId, referenc
  * tipo oposto ou de mesmo tipo dependendo do caso, referenciando a
  * original via adjustment_of — preserva o histórico completo.
  */
-async function createAdjustment({ originalMovementId, type, quantidade, userId, justificativa, ip }) {
+async function createAdjustment({ originalMovementId, type, quantidade, userId, justificativa, ip, fornecedor, numeroNf, valorUnitario }) {
   if (!justificativa || justificativa.trim().length < 5) {
     throw ApiError.badRequest('Justificativa obrigatória para qualquer ajuste (mínimo 5 caracteres).');
   }
@@ -76,11 +88,16 @@ async function createAdjustment({ originalMovementId, type, quantidade, userId, 
       throw ApiError.badRequest('Ajuste resultaria em estoque negativo.');
     }
 
+    const valorUnitarioFinal = type === 'entrada'
+      ? (valorUnitario != null && valorUnitario !== '' ? valorUnitario : null)
+      : Number(product.custo_medio);
+
     const { rows } = await client.query(
-      `INSERT INTO movements (product_id, type, quantidade, user_id, referencia, observacao, adjustment_of)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      `INSERT INTO movements (product_id, type, quantidade, user_id, referencia, observacao, adjustment_of, fornecedor, numero_nf, valor_unitario)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
       [original.product_id, type, quantidade, userId, original.referencia,
-        `AJUSTE: ${justificativa}`, original.id]
+        `AJUSTE: ${justificativa}`, original.id,
+        (type === 'entrada' ? fornecedor : null) || null, (type === 'entrada' ? numeroNf : null) || null, valorUnitarioFinal]
     );
     const adjustment = rows[0];
 

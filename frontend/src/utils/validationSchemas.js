@@ -11,7 +11,13 @@ export const productSchema = yup.object({
   categoria: yup.string().oneOf(['FR', 'CO', 'IP', 'MI', 'MP'], 'Selecione uma categoria.').required('Categoria obrigatória.'),
   unidade: yup.string().trim().max(10).required('Unidade obrigatória.'),
   estoqueMinimo: yup.number().typeError('Deve ser um número.').min(0, 'Não pode ser negativo.').required('Obrigatório.'),
-  estoqueAtual: yup.number().typeError('Deve ser um número.').min(0, 'Não pode ser negativo.').required('Obrigatório.')
+  estoqueAtual: yup.number().typeError('Deve ser um número.').min(0, 'Não pode ser negativo.').required('Obrigatório.'),
+  // Opcional: custo médio inicial, só faz sentido ao cadastrar um
+  // produto que já chega com saldo (ex: migração da planilha) — se
+  // deixado em branco, o custo médio é calculado sozinho a partir da
+  // primeira ENTRADA com custo informado.
+  custoMedio: yup.number().typeError('Deve ser um número.').min(0, 'Não pode ser negativo.').nullable()
+    .transform((value, originalValue) => (originalValue === '' ? null : value))
 });
 
 export const vehicleSchema = yup.object({
@@ -34,13 +40,24 @@ export const movementSchema = yup.object({
   quantidade: yup.number().typeError('Informe uma quantidade.').moreThan(0, 'Deve ser maior que zero.').required(),
   referencia: yup.string().trim().max(160).nullable(),
   observacao: yup.string().trim().max(1000).nullable(),
-  vehiclePlaca: yup.string().trim().max(10).nullable()
+  vehiclePlaca: yup.string().trim().max(10).nullable(),
+  // Só se aplicam (e só são mostrados no formulário) quando type='entrada'
+  // — em saída, o custo é travado automaticamente pelo backend a partir
+  // do custo médio do produto, nunca digitado. Ver MovementsPage.jsx.
+  fornecedor: yup.string().trim().max(160).nullable(),
+  numeroNf: yup.string().trim().max(60).nullable(),
+  valorUnitario: yup.number().typeError('Deve ser um número.').min(0, 'Não pode ser negativo.').nullable()
+    .transform((value, originalValue) => (originalValue === '' ? null : value))
 });
 
 export const adjustMovementSchema = yup.object({
   type: yup.string().oneOf(['entrada', 'saida']).required(),
   quantidade: yup.number().typeError('Informe uma quantidade.').moreThan(0, 'Deve ser maior que zero.').required(),
-  justificativa: yup.string().trim().min(5, 'Mínimo 5 caracteres.').max(500).required('Justificativa obrigatória.')
+  justificativa: yup.string().trim().min(5, 'Mínimo 5 caracteres.').max(500).required('Justificativa obrigatória.'),
+  fornecedor: yup.string().trim().max(160).nullable(),
+  numeroNf: yup.string().trim().max(60).nullable(),
+  valorUnitario: yup.number().typeError('Deve ser um número.').min(0, 'Não pode ser negativo.').nullable()
+    .transform((value, originalValue) => (originalValue === '' ? null : value))
 });
 
 export const userSchema = yup.object({

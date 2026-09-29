@@ -2,10 +2,11 @@ import React from 'react';
 import { useState } from 'react';
 import Page from '../components/layout/Page';
 import { EmptyTableRow, LoadingInline } from '../components/ui/Common';
+import ProductPicker from '../components/ui/ProductPicker';
 import { useToast } from '../context/ToastContext';
 import * as reportsApi from '../api/reportsApi';
 import { extractErrorMessage } from '../utils/errors';
-import { formatNumber, formatDate, maskPlaca } from '../utils/format';
+import { formatNumber, formatCurrency, formatDate, formatDateTime, maskPlaca } from '../utils/format';
 import { CategoriaBadge } from '../components/ui/Common';
 
 export default function ReportsPage() {
@@ -22,6 +23,24 @@ export default function ReportsPage() {
 
   const [reposicao, setReposicao] = useState(null);
   const [loadingReposicao, setLoadingReposicao] = useState(false);
+
+  const [produtoKardex, setProdutoKardex] = useState(null);
+  const [kardex, setKardex] = useState(null);
+  const [loadingKardex, setLoadingKardex] = useState(false);
+
+  async function buscarKardex(produto) {
+    if (!produto) return;
+    setLoadingKardex(true);
+    try {
+      const data = await reportsApi.kardexProduto(produto.id);
+      setKardex(data);
+    } catch (err) {
+      toast.erro(extractErrorMessage(err, 'Não foi possível carregar o Kardex deste produto.'));
+      setKardex(null);
+    } finally {
+      setLoadingKardex(false);
+    }
+  }
 
   async function buscarConsumoVeiculo() {
     if (!placa) { toast.erro('Digite uma placa para buscar.'); return; }
@@ -98,6 +117,59 @@ export default function ReportsPage() {
                       <td>{c.produto_nome}</td>
                       <td className="mono">{formatNumber(c.quantidade)}</td>
                       <td>{c.responsavel}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="panel">
+        <div className="section-head"><h2>Kardex do produto</h2></div>
+        <p className="panel-desc">Ficha completa de um produto — igual ao Kardex tradicional: cada movimentação com nota fiscal, fornecedor, custo e o saldo (quantidade e valor em R$) acumulado depois dela.</p>
+        <div style={{ maxWidth: 420, marginBottom: 4 }}>
+          <ProductPicker value={produtoKardex} onSelect={(p) => { setProdutoKardex(p); setKardex(null); buscarKardex(p); }} placeholder="Digite o código ou nome do produto..." />
+        </div>
+
+        {loadingKardex && <LoadingInline />}
+        {kardex && !loadingKardex && (
+          <div style={{ marginTop: 16 }}>
+            <div className="section-head">
+              <div>
+                <h3 style={{ fontSize: 14, marginBottom: 4 }}><span className="mono">{kardex.produto.codigo}</span> — {kardex.produto.nome}</h3>
+                <p style={{ fontSize: 12.5, color: 'var(--steel-2)', margin: 0 }}>
+                  Estoque atual: <strong className="mono">{formatNumber(kardex.produto.estoque_atual)} {kardex.produto.unidade}</strong>
+                  {' · '}Custo médio: <strong className="mono">{formatCurrency(kardex.produto.custo_medio)}</strong>
+                  {' · '}Valor em estoque: <strong className="mono">{formatCurrency(kardex.produto.valor_estoque)}</strong>
+                </p>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => exportar('kardex', { productId: produtoKardex.id })}>Exportar CSV</button>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data</th><th>NF</th><th>Fornecedor</th><th>Tipo</th><th>Qtd</th>
+                    <th>Custo Unit.</th><th>Valor</th><th>Saldo Qtd</th><th>Saldo Valor</th><th>Responsável</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {kardex.historico.length === 0 ? (
+                    <EmptyTableRow colSpan={10}>Nenhuma movimentação registrada para este produto ainda.</EmptyTableRow>
+                  ) : kardex.historico.map((h) => (
+                    <tr key={h.id}>
+                      <td className="mono">{formatDateTime(h.data_movimentacao)}</td>
+                      <td className="mono">{h.numero_nf || '-'}</td>
+                      <td>{h.fornecedor || '-'}</td>
+                      <td>{h.type === 'entrada' ? '📥 Entrada' : '📤 Saída'}{h.adjustment_of && <span style={{ marginLeft: 4, fontSize: 10, color: 'var(--steel-2)' }}>(ajuste)</span>}</td>
+                      <td className="mono">{formatNumber(h.quantidade)}</td>
+                      <td className="mono">{h.valor_unitario !== null ? formatCurrency(h.valor_unitario) : '-'}</td>
+                      <td className="mono">{h.valor_total !== null ? formatCurrency(h.valor_total) : '-'}</td>
+                      <td className="mono">{formatNumber(h.saldo_qtd)}</td>
+                      <td className="mono">{formatCurrency(h.saldo_valor)}</td>
+                      <td>{h.responsavel}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -29,7 +29,7 @@ describe('movement.repository.create — regra "saída não pode exceder o estoq
   test('rejeita uma saída maior que o estoque atual (lido com FOR UPDATE)', async () => {
     // 1ª query dentro da transaction = SELECT ... FOR UPDATE
     mockClient.query.mockResolvedValueOnce({
-      rows: [{ id: 1, estoque_atual: '5.00', unidade: 'un', ativo: true }]
+      rows: [{ id: 1, estoque_atual: '5.00', custo_medio: '0.0000', unidade: 'un', ativo: true }]
     });
 
     await expect(
@@ -43,7 +43,7 @@ describe('movement.repository.create — regra "saída não pode exceder o estoq
   });
 
   test('aceita uma saída igual ao estoque atual (limite exato, não deve ser rejeitado)', async () => {
-    mockClient.query.mockResolvedValueOnce({ rows: [{ id: 1, estoque_atual: '5.00', unidade: 'un', ativo: true }] });
+    mockClient.query.mockResolvedValueOnce({ rows: [{ id: 1, estoque_atual: '5.00', custo_medio: '0.0000', unidade: 'un', ativo: true }] });
     mockClient.query.mockResolvedValueOnce({ rows: [{ id: 99, product_id: 1, type: 'saida', quantidade: 5 }] });
 
     const movement = await movementRepository.create({ productId: 1, type: 'saida', quantidade: 5, userId: 7 });
@@ -62,7 +62,7 @@ describe('movement.repository.create — regra "saída não pode exceder o estoq
   });
 
   test('entrada não tem limite de quantidade (só saída é validada contra o estoque)', async () => {
-    mockClient.query.mockResolvedValueOnce({ rows: [{ id: 1, estoque_atual: '5.00', unidade: 'un', ativo: true }] });
+    mockClient.query.mockResolvedValueOnce({ rows: [{ id: 1, estoque_atual: '5.00', custo_medio: '0.0000', unidade: 'un', ativo: true }] });
     mockClient.query.mockResolvedValueOnce({ rows: [{ id: 100, product_id: 1, type: 'entrada', quantidade: 1000 }] });
 
     const movement = await movementRepository.create({ productId: 1, type: 'entrada', quantidade: 1000, userId: 7 });
@@ -92,5 +92,56 @@ describe('movement.repository.createAdjustment — correção nunca edita/exclui
     expect(adjustment.adjustment_of).toBe(50);
     const insertCall = mockClient.query.mock.calls.find(([sql]) => sql.includes('INSERT INTO movements'));
     expect(insertCall[1]).toContain(50); // adjustment_of vai no INSERT
+  });
+});
+
+describe('movement.repository.create — custo (Kardex): entrada usa o custo digitado, saída trava no custo médio', () => {
+  // Índices dos parâmetros do INSERT em create(): ver movement.repository.js
+  const IDX_FORNECEDOR = 7;
+  const IDX_NUMERO_NF = 8;
+  const IDX_VALOR_UNITARIO = 9;
+
+  function paramsDoInsert() {
+    const call = mockClient.query.mock.calls.find(([sql]) => sql.includes('INSERT INTO movements'));
+    return call[1];
+  }
+
+  test('ENTRADA grava fornecedor, NF e o custo unitário informados pelo usuário', async () => {
+    mockClient.query.mockResolvedValueOnce({ rows: [{ id: 1, estoque_atual: '10.00', custo_medio: '100.0000', unidade: 'un', ativo: true }] });
+    mockClient.query.mockResolvedValueOnce({ rows: [{ id: 200, product_id: 1, type: 'entrada' }] });
+
+    await movementRepository.create({
+      productId: 1, type: 'entrada', quantidade: 15, userId: 7,
+      fornecedor: 'Distribuidora XYZ', numeroNf: '1017363', valorUnitario: 257.05
+    });
+
+    const params = paramsDoInsert();
+    expect(params[IDX_FORNECEDOR]).toBe('Distribuidora XYZ');
+    expect(params[IDX_NUMERO_NF]).toBe('1017363');
+    expect(params[IDX_VALOR_UNITARIO]).toBe(257.05);
+  });
+
+  test('SAÍDA ignora qualquer custo enviado pelo cliente e trava no custo médio atual do produto', async () => {
+    mockClient.query.mockResolvedValueOnce({ rows: [{ id: 1, estoque_atual: '10.00', custo_medio: '123.4500', unidade: 'un', ativo: true }] });
+    mockClient.query.mockResolvedValueOnce({ rows: [{ id: 201, product_id: 1, type: 'saida' }] });
+
+    await movementRepository.create({
+      productId: 1, type: 'saida', quantidade: 3, userId: 7,
+      valorUnitario: 9999, fornecedor: 'Não deveria gravar', numeroNf: 'NAO-DEVERIA'
+    });
+
+    const params = paramsDoInsert();
+    expect(params[IDX_VALOR_UNITARIO]).toBe(123.45); // custo médio do produto, não o 9999 enviado
+    expect(params[IDX_FORNECEDOR]).toBeNull();        // fornecedor/NF só existem em entrada
+    expect(params[IDX_NUMERO_NF]).toBeNull();
+  });
+
+  test('ENTRADA sem custo informado grava valor_unitario nulo (custo médio do produto não muda)', async () => {
+    mockClient.query.mockResolvedValueOnce({ rows: [{ id: 1, estoque_atual: '10.00', custo_medio: '50.0000', unidade: 'un', ativo: true }] });
+    mockClient.query.mockResolvedValueOnce({ rows: [{ id: 202, product_id: 1, type: 'entrada' }] });
+
+    await movementRepository.create({ productId: 1, type: 'entrada', quantidade: 5, userId: 7 });
+
+    expect(paramsDoInsert()[IDX_VALOR_UNITARIO]).toBeNull();
   });
 });

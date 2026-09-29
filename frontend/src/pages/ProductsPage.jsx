@@ -11,7 +11,7 @@ import { useToast } from '../context/ToastContext';
 import { listProducts, createProduct, updateProduct, deleteProduct, importProductsCsv } from '../api/productsApi';
 import { productSchema } from '../utils/validationSchemas';
 import { extractErrorMessage } from '../utils/errors';
-import { formatNumber } from '../utils/format';
+import { formatNumber, formatCurrency } from '../utils/format';
 import { CATEGORIAS, WRITE_ROLES } from '../utils/constants';
 
 const LIMIT = 20;
@@ -61,14 +61,15 @@ export default function ProductsPage() {
 
   function openCreate() {
     setEditing(null);
-    reset({ codigo: '', nome: '', categoria: '', unidade: '', estoqueMinimo: 0, estoqueAtual: 0 });
+    reset({ codigo: '', nome: '', categoria: '', unidade: '', estoqueMinimo: 0, estoqueAtual: 0, custoMedio: '' });
     setFormOpen(true);
   }
   function openEdit(p) {
     setEditing(p);
     reset({
       codigo: p.codigo, nome: p.nome, categoria: p.categoria, unidade: p.unidade,
-      estoqueMinimo: Number(p.estoque_minimo), estoqueAtual: Number(p.estoque_atual)
+      estoqueMinimo: Number(p.estoque_minimo), estoqueAtual: Number(p.estoque_atual),
+      custoMedio: Number(p.custo_medio)
     });
     setFormOpen(true);
   }
@@ -183,6 +184,14 @@ export default function ProductsPage() {
               <FieldError message={errors.estoqueAtual?.message} />
               {editing && <small style={{ color: 'var(--steel-2)', fontSize: 11 }}>Só muda via movimentação.</small>}
             </div>
+            <div>
+              <label>Custo médio inicial (R$)</label>
+              <input type="number" step="0.0001" min="0" {...register('custoMedio')} disabled={!!editing} placeholder="Opcional" />
+              <FieldError message={errors.custoMedio?.message} />
+              {editing
+                ? <small style={{ color: 'var(--steel-2)', fontSize: 11 }}>Só muda via movimentação de entrada.</small>
+                : <small style={{ color: 'var(--steel-2)', fontSize: 11 }}>Se o produto já chega com saldo (ex: migração de planilha).</small>}
+            </div>
           </div>
           <div className="form-actions">
             <button type="submit" className="btn btn-primary" disabled={isSubmitting}>{isSubmitting ? 'Salvando...' : 'Salvar'}</button>
@@ -194,13 +203,13 @@ export default function ProductsPage() {
       <div className="table-wrap">
         <table>
           <thead>
-            <tr><th>Código</th><th>Nome</th><th>Categoria</th><th>Unidade</th><th>Atual</th><th>Mínimo</th><th>Status</th>{canWrite && <th>Ações</th>}</tr>
+            <tr><th>Código</th><th>Nome</th><th>Categoria</th><th>Unidade</th><th>Atual</th><th>Mínimo</th><th>Custo médio</th><th>Valor em estoque</th><th>Status</th>{canWrite && <th>Ações</th>}</tr>
           </thead>
           <tbody>
             {loading ? (
-              <EmptyTableRow colSpan={8}><LoadingInline /></EmptyTableRow>
+              <EmptyTableRow colSpan={10}><LoadingInline /></EmptyTableRow>
             ) : items.length === 0 ? (
-              <EmptyTableRow colSpan={8}>Nenhum produto encontrado.</EmptyTableRow>
+              <EmptyTableRow colSpan={10}>Nenhum produto encontrado.</EmptyTableRow>
             ) : items.map((p) => {
               const baixo = Number(p.estoque_atual) <= Number(p.estoque_minimo);
               return (
@@ -211,6 +220,8 @@ export default function ProductsPage() {
                   <td>{p.unidade}</td>
                   <td className="mono">{formatNumber(p.estoque_atual)}</td>
                   <td className="mono">{formatNumber(p.estoque_minimo)}</td>
+                  <td className="mono">{formatCurrency(p.custo_medio)}</td>
+                  <td className="mono">{formatCurrency(p.valor_estoque)}</td>
                   <td>{baixo ? <span className="status-low">⚠ Baixo</span> : <span className="status-ok">● Normal</span>}</td>
                   {canWrite && (
                     <td className="actions-cell">

@@ -39,10 +39,20 @@ CREATE TABLE products (
   id               SERIAL PRIMARY KEY,
   codigo           VARCHAR(30) UNIQUE NOT NULL,
   nome             VARCHAR(160) NOT NULL,
-  categoria        VARCHAR(5) NOT NULL CHECK (categoria IN ('FR','CO','IP','MI')),
+  categoria        VARCHAR(5) NOT NULL CHECK (categoria IN ('FR','CO','IP','MI','MP')),
   unidade          VARCHAR(10) NOT NULL,
   estoque_minimo   NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (estoque_minimo >= 0),
   estoque_atual    NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (estoque_atual >= 0),
+  -- Custo médio ponderado móvel (recalculado a cada ENTRADA — ver
+  -- fn_atualizar_estoque). Padrão contábil mais usado no Brasil quando
+  -- não se exige FIFO/LIFO; é o que faz o "SALDO (Total)" do Kardex
+  -- tradicional (ver MIGRATION_GUIDE.md) funcionar de forma automática,
+  -- sem o usuário ter que calcular na mão a cada saída.
+  custo_medio      NUMERIC(14,4) NOT NULL DEFAULT 0 CHECK (custo_medio >= 0),
+  -- Valor monetário do estoque atual — sempre consistente porque é
+  -- CALCULADO pelo banco (nunca gravado direto), igual ao "SALDO
+  -- (Total)" da planilha Kardex.
+  valor_estoque    NUMERIC(16,2) GENERATED ALWAYS AS (estoque_atual * custo_medio) STORED,
   ativo            BOOLEAN NOT NULL DEFAULT TRUE,   -- soft delete
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -89,6 +99,15 @@ CREATE TABLE movements (
   vehicle_id        INT REFERENCES vehicles(id),      -- preenchido quando referência é da frota (FR)
   referencia        VARCHAR(160),                      -- setor, local, nº de pedido/NF etc.
   observacao        TEXT,
+  -- Campos de custo, pedidos para o registro funcionar como um Kardex
+  -- tradicional (ver docs/OVAM_25 — referência que a cliente enviou).
+  -- Preenchidos pelo usuário em ENTRADA; em SAÍDA, valor_unitario é
+  -- travado automaticamente pelo backend a partir do custo médio do
+  -- produto no momento — nunca digitado à mão (ver movement.repository.js).
+  fornecedor        VARCHAR(160),
+  numero_nf         VARCHAR(60),
+  valor_unitario    NUMERIC(14,4) CHECK (valor_unitario IS NULL OR valor_unitario >= 0),
+  valor_total       NUMERIC(16,2) GENERATED ALWAYS AS (quantidade * valor_unitario) STORED,
   adjustment_of      INT REFERENCES movements(id),      -- aponta para a movimentação corrigida, se for um ajuste
   data_movimentacao TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -123,12 +142,49 @@ CREATE INDEX idx_audit_timestamp ON audit_log(timestamp);
 -- movement.repository.js — então isto é redundante por design, não
 -- por descuido: two-phase safety é aceitável aqui pelo baixo custo.
 -- =====================================================================
+-- =====================================================================
+-- TRIGGER: mantém products.estoque_atual E products.custo_medio
+-- sempre consistentes.
+-- Funciona como rede de segurança mesmo se algo gravar direto no banco
+-- fora da API (import manual, script de correção etc.).
+-- A API também atualiza dentro da mesma transaction — ver
+-- movement.repository.js — então isto é redundante por design, não
+-- por descuido: two-phase safety é aceitável aqui pelo baixo custo.
+--
+-- Custo médio ponderado móvel: a cada ENTRADA com valor_unitario
+-- informado, o novo custo médio é a média do estoque que já existia
+-- (valorizado ao custo médio atual) com o valor da entrada nova,
+-- dividida pela quantidade total resultante — é a mesma conta que uma
+-- planilha de Kardex tradicional faz na coluna "SALDO (Total)".
+-- SAÍDA nunca muda o custo médio — só reduz a quantidade. O
+-- valor_unitario de uma saída não vem do usuário: é travado pela
+-- aplicação a partir do custo médio do produto ANTES de decrementar
+-- (ver movement.repository.js) — este trigger só aplica a matemática.
+-- =====================================================================
 CREATE OR REPLACE FUNCTION fn_atualizar_estoque()
 RETURNS TRIGGER AS $$
+DECLARE
+  estoque_anterior  NUMERIC(12,2);
+  custo_anterior    NUMERIC(14,4);
+  novo_custo_medio  NUMERIC(14,4);
 BEGIN
+  SELECT estoque_atual, custo_medio INTO estoque_anterior, custo_anterior
+  FROM products WHERE id = NEW.product_id;
+
   IF NEW.type = 'entrada' THEN
-    UPDATE products SET estoque_atual = estoque_atual + NEW.quantidade, updated_at = NOW()
-    WHERE id = NEW.product_id;
+    IF NEW.valor_unitario IS NOT NULL AND (estoque_anterior + NEW.quantidade) > 0 THEN
+      novo_custo_medio := ((estoque_anterior * custo_anterior) + (NEW.quantidade * NEW.valor_unitario))
+                           / (estoque_anterior + NEW.quantidade);
+      UPDATE products SET estoque_atual = estoque_atual + NEW.quantidade,
+                           custo_medio = novo_custo_medio,
+                           updated_at = NOW()
+      WHERE id = NEW.product_id;
+    ELSE
+      -- Entrada sem custo informado: soma quantidade, custo médio não muda
+      -- (produto continua valorizado pelo custo médio que já tinha).
+      UPDATE products SET estoque_atual = estoque_atual + NEW.quantidade, updated_at = NOW()
+      WHERE id = NEW.product_id;
+    END IF;
   ELSE
     UPDATE products SET estoque_atual = estoque_atual - NEW.quantidade, updated_at = NOW()
     WHERE id = NEW.product_id;

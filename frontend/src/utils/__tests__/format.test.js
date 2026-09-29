@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { formatNumber, formatDate, formatDateTime, maskPlaca } from '../format';
+import { formatNumber, formatCurrency, formatDate, formatDateTime, maskPlaca } from '../format';
 
 describe('formatNumber', () => {
   test('formata número inteiro com separador de milhar pt-BR', () => {
@@ -37,5 +37,23 @@ describe('formatDate / formatDateTime', () => {
   test('formata uma data ISO válida sem lançar erro', () => {
     expect(() => formatDate('2026-03-15T10:00:00Z')).not.toThrow();
     expect(formatDate('2026-03-15T10:00:00Z')).not.toBe('-');
+  });
+});
+
+describe('formatCurrency', () => {
+  // O Intl pt-BR separa "R$" do número com um espaço NÃO separável (U+00A0),
+  // não um espaço comum — normalizamos antes de comparar.
+  const normalizar = (s) => s.replace(/\u00a0/g, ' ');
+
+  test('formata em Real com separador de milhar e vírgula decimal', () => {
+    expect(normalizar(formatCurrency(1234.5))).toBe('R$ 1.234,50');
+  });
+  test('zero é formatado como R$ 0,00 (custo zero é um valor real)', () => {
+    expect(normalizar(formatCurrency(0))).toBe('R$ 0,00');
+  });
+  test('null/undefined/vazio viram "—" (custo desconhecido, não custo zero)', () => {
+    expect(formatCurrency(null)).toBe('—');
+    expect(formatCurrency(undefined)).toBe('—');
+    expect(formatCurrency('')).toBe('—');
   });
 });

@@ -8,7 +8,8 @@ const createRules = [
   body('categoria').isIn(CATEGORIAS).withMessage('Categoria deve ser FR, CO, IP, MI ou MP.'),
   body('unidade').isString().trim().isLength({ min: 1, max: 10 }).withMessage('Unidade obrigatória.'),
   body('estoqueMinimo').optional().isFloat({ min: 0 }).withMessage('Estoque mínimo não pode ser negativo.'),
-  body('estoqueAtual').optional().isFloat({ min: 0 }).withMessage('Estoque atual não pode ser negativo.')
+  body('estoqueAtual').optional().isFloat({ min: 0 }).withMessage('Estoque atual não pode ser negativo.'),
+  body('custoMedio').optional().isFloat({ min: 0 }).withMessage('Custo médio não pode ser negativo.')
 ];
 
 const updateRules = [

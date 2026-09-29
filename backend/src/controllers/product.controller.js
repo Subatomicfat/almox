@@ -34,14 +34,14 @@ const getById = asyncHandler(async (req, res) => {
 });
 
 const create = asyncHandler(async (req, res) => {
-  const { codigo, nome, categoria, unidade, estoqueMinimo, estoqueAtual } = req.body;
+  const { codigo, nome, categoria, unidade, estoqueMinimo, estoqueAtual, custoMedio } = req.body;
 
   const existing = await productRepository.findByCodigo(codigo.toUpperCase());
   if (existing) throw ApiError.conflict(`Já existe um produto com o código ${codigo}.`);
 
   const product = await productRepository.create({
     codigo: codigo.toUpperCase(), nome, categoria, unidade,
-    estoqueMinimo: estoqueMinimo ?? 0, estoqueAtual: estoqueAtual ?? 0
+    estoqueMinimo: estoqueMinimo ?? 0, estoqueAtual: estoqueAtual ?? 0, custoMedio
   });
   await auditRepository.log({ userId: req.user.id, action: 'CREATE', table: 'products', recordId: product.id, newValues: product, ip: req.ip });
   await cache.bumpVersion(PRODUCTS_VERSION_KEY);
@@ -81,7 +81,9 @@ const estoqueBaixo = asyncHandler(async (req, res) => {
 /**
  * Importa produtos em massa via CSV (uso previsto: migrar a planilha
  * de ~1.500 itens do Excel — ver MIGRATION_GUIDE.md).
- * Formato esperado por linha: codigo;nome;categoria;unidade;minimo;atual
+ * Formato esperado por linha: codigo;nome;categoria;unidade;minimo;atual;custo
+ * A 7ª coluna (custo médio inicial) é opcional — linhas com só 6
+ * colunas continuam funcionando como antes, custo fica 0.
  * Aceita ; ou , como delimitador e ignora uma linha de cabeçalho.
  */
 const importCsv = asyncHandler(async (req, res) => {
@@ -104,20 +106,22 @@ const importCsv = asyncHandler(async (req, res) => {
     const cols = linhas[i].split(delimitador).map((c) => c.trim().replace(/^"|"$/g, ''));
     if (cols.length < 6) { erros++; detalhesErros.push({ linha: i + 1, motivo: 'Colunas insuficientes' }); continue; }
 
-    const [codigoRaw, nome, categoriaRaw, unidade, minimoRaw, atualRaw] = cols;
+    const [codigoRaw, nome, categoriaRaw, unidade, minimoRaw, atualRaw, custoRaw] = cols;
     const codigo = (codigoRaw || '').toUpperCase();
     const categoria = (categoriaRaw || '').toUpperCase();
     const minimo = parseFloat(minimoRaw);
     const atual = parseFloat(atualRaw);
+    // custo é opcional: coluna ausente ou vazia -> custo 0 (não é erro)
+    const custo = custoRaw ? parseFloat(custoRaw.replace(',', '.')) : 0;
 
-    if (!codigo || !nome || !categoriasValidas.includes(categoria) || isNaN(minimo) || isNaN(atual)) {
+    if (!codigo || !nome || !categoriasValidas.includes(categoria) || isNaN(minimo) || isNaN(atual) || isNaN(custo)) {
       erros++; detalhesErros.push({ linha: i + 1, motivo: 'Dados inválidos ou categoria fora de FR/CO/IP/MI/MP' }); continue;
     }
 
     const existing = await productRepository.findByCodigo(codigo);
     if (existing) { ignorados++; continue; }
 
-    const product = await productRepository.create({ codigo, nome, categoria, unidade: unidade || 'un', estoqueMinimo: minimo, estoqueAtual: atual });
+    const product = await productRepository.create({ codigo, nome, categoria, unidade: unidade || 'un', estoqueMinimo: minimo, estoqueAtual: atual, custoMedio: custo });
     await auditRepository.log({ userId: req.user.id, action: 'CREATE', table: 'products', recordId: product.id, newValues: product, ip: req.ip });
     importados++;
   }

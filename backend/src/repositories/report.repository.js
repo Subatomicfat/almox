@@ -61,6 +61,32 @@ async function atividadePorUsuario({ userId, dataInicio, dataFim } = {}) {
   return rows;
 }
 
+/**
+ * Kardex de um produto: recria exatamente a planilha de referência da
+ * cliente (OVAM 25) — cada linha é uma movimentação, com o saldo
+ * (quantidade e valor) acumulado até aquela linha. Calculado on-the-fly
+ * com window function, nunca guardado — sempre consistente mesmo se um
+ * ajuste for inserido depois de outras movimentações.
+ */
+async function kardexPorProduto(productId) {
+  const { rows } = await query(
+    `SELECT
+       m.id, m.data_movimentacao, m.type, m.numero_nf, m.fornecedor,
+       m.quantidade, m.valor_unitario, m.valor_total, m.referencia, m.observacao,
+       m.adjustment_of, u.nome AS responsavel,
+       SUM(CASE WHEN m.type = 'entrada' THEN m.quantidade ELSE -m.quantidade END)
+         OVER (ORDER BY m.data_movimentacao, m.id ROWS UNBOUNDED PRECEDING) AS saldo_qtd,
+       SUM(CASE WHEN m.type = 'entrada' THEN COALESCE(m.valor_total, 0) ELSE -COALESCE(m.valor_total, 0) END)
+         OVER (ORDER BY m.data_movimentacao, m.id ROWS UNBOUNDED PRECEDING) AS saldo_valor
+     FROM movements m
+     JOIN users u ON u.id = m.user_id
+     WHERE m.product_id = $1
+     ORDER BY m.data_movimentacao, m.id`,
+    [productId]
+  );
+  return rows;
+}
+
 async function dashboardStats() {
   const [{ rows: totalProdutos }, { rows: alertas }, { rows: movsHoje }, { rows: veiculos }, { rows: ativos }] =
     await Promise.all([
@@ -80,4 +106,4 @@ async function dashboardStats() {
   };
 }
 
-module.exports = { consumoPorVeiculo, consumoPorCategoria, estoqueBaixo, atividadePorUsuario, dashboardStats };
+module.exports = { consumoPorVeiculo, consumoPorCategoria, estoqueBaixo, atividadePorUsuario, kardexPorProduto, dashboardStats };

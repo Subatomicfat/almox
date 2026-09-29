@@ -15,6 +15,16 @@ export async function estoqueBaixoReport() {
   return data;
 }
 
+/**
+ * Kardex de um produto: ficha completa (custo médio, valor em estoque)
+ * + histórico de movimentações com saldo (qtd. e valor) acumulado
+ * linha a linha — a mesma visão da planilha Kardex tradicional.
+ */
+export async function kardexProduto(productId) {
+  const { data } = await api.get(`/reports/kardex/${productId}`);
+  return data; // { produto, historico }
+}
+
 export async function atividadeUsuario(params = {}) {
   const { data } = await api.get('/reports/atividade-usuario', { params });
   return data;

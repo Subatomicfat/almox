@@ -5,60 +5,14 @@ import { yupResolver } from '@hookform/resolvers/yup';
 import Page from '../components/layout/Page';
 import { LoadingInline, EmptyTableRow } from '../components/ui/Common';
 import FieldError from '../components/ui/FieldError';
+import ProductPicker from '../components/ui/ProductPicker';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { listMovements, createMovement, adjustMovement } from '../api/movementsApi';
-import { listProducts } from '../api/productsApi';
 import { movementSchema, adjustMovementSchema } from '../utils/validationSchemas';
 import { extractErrorMessage } from '../utils/errors';
-import { formatNumber, formatDateTime, maskPlaca } from '../utils/format';
+import { formatNumber, formatCurrency, formatDateTime, maskPlaca } from '../utils/format';
 import { CATEGORIAS, MOVEMENT_ROLES, WRITE_ROLES } from '../utils/constants';
-
-function ProductPicker({ value, onSelect }) {
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState([]);
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    if (!query || query.length < 2) { setResults([]); return; }
-    const timer = setTimeout(async () => {
-      try {
-        const { data } = await listProducts({ busca: query, limit: 8 });
-        setResults(data);
-      } catch { /* busca opcional — falha silenciosa não bloqueia o formulário */ }
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [query]);
-
-  return (
-    <div style={{ position: 'relative' }}>
-      <input
-        placeholder="Digite o código ou nome do produto..."
-        value={value ? `${value.codigo} — ${value.nome}` : query}
-        onChange={(e) => { onSelect(null); setQuery(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-      />
-      {value && (
-        <div className="info-line" style={{ display: 'block', background: 'var(--amber-soft)', color: 'var(--amber-dark)', borderRadius: 6, padding: '8px 12px', fontSize: 12.5, fontFamily: 'var(--font-mono)', marginTop: 6 }}>
-          Estoque atual: {formatNumber(value.estoque_atual)} {value.unidade} · Mínimo: {formatNumber(value.estoque_minimo)} {value.unidade}
-        </div>
-      )}
-      {open && results.length > 0 && !value && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--panel)', border: '1px solid var(--line-strong)', borderRadius: 7, zIndex: 10, boxShadow: 'var(--shadow-md)', maxHeight: 220, overflowY: 'auto' }}>
-          {results.map((p) => (
-            <div
-              key={p.id}
-              style={{ padding: '9px 12px', cursor: 'pointer', fontSize: 13, borderBottom: '1px solid var(--line)' }}
-              onMouseDown={() => { onSelect(p); setOpen(false); setQuery(''); }}
-            >
-              <span className="mono">{p.codigo}</span> — {p.nome}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default function MovementsPage() {
   const { hasRole } = useAuth();
@@ -73,11 +27,16 @@ export default function MovementsPage() {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [adjusting, setAdjusting] = useState(null); // movimentação sendo ajustada
 
-  const { register, handleSubmit, reset, control, setValue, formState: { errors, isSubmitting } } = useForm({
-    resolver: yupResolver(movementSchema)
+  const { register, handleSubmit, reset, control, setValue, watch, formState: { errors, isSubmitting } } = useForm({
+    resolver: yupResolver(movementSchema),
+    defaultValues: { type: 'entrada' }
   });
+  const tipoAtual = watch('type');
+  const quantidadeAtual = watch('quantidade');
+  const valorUnitarioAtual = watch('valorUnitario');
 
   const adjustForm = useForm({ resolver: yupResolver(adjustMovementSchema) });
+  const tipoAjusteAtual = adjustForm.watch('type');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -98,7 +57,7 @@ export default function MovementsPage() {
     try {
       await createMovement(values);
       toast.sucesso('Movimentação registrada com sucesso.');
-      reset({ type: 'entrada', productId: undefined, quantidade: '', referencia: '', observacao: '', vehiclePlaca: '' });
+      reset({ type: 'entrada', productId: undefined, quantidade: '', referencia: '', observacao: '', vehiclePlaca: '', fornecedor: '', numeroNf: '', valorUnitario: '' });
       setSelectedProduct(null);
       load();
     } catch (err) {
@@ -117,6 +76,10 @@ export default function MovementsPage() {
     }
   }
 
+  const valorTotalPreview = tipoAtual === 'entrada' && quantidadeAtual && valorUnitarioAtual
+    ? Number(quantidadeAtual) * Number(valorUnitarioAtual)
+    : null;
+
   return (
     <Page title="Movimentações" subtitle="Registro de entradas e saídas de estoque">
       {canCreate && (
@@ -125,7 +88,7 @@ export default function MovementsPage() {
           <div className="form-grid">
             <div>
               <label>Tipo</label>
-              <select {...register('type')} defaultValue="entrada">
+              <select {...register('type')}>
                 <option value="entrada">📥 Entrada</option>
                 <option value="saida">📤 Saída</option>
               </select>
@@ -161,6 +124,35 @@ export default function MovementsPage() {
               <label>Observação</label>
               <input {...register('observacao')} placeholder="Detalhes adicionais..." />
             </div>
+
+            {/* Campos de custo — só fazem sentido em ENTRADA. Em SAÍDA, o
+                custo é travado automaticamente pelo backend a partir do
+                custo médio do produto (mostrado no ProductPicker acima),
+                nunca digitado à mão — por isso não aparecem aqui. */}
+            {tipoAtual === 'entrada' && (
+              <>
+                <div>
+                  <label>Fornecedor</label>
+                  <input {...register('fornecedor')} placeholder="Nome do fornecedor" />
+                  <FieldError message={errors.fornecedor?.message} />
+                </div>
+                <div>
+                  <label>Nº da Nota Fiscal</label>
+                  <input {...register('numeroNf')} placeholder="Ex: 1017363" />
+                  <FieldError message={errors.numeroNf?.message} />
+                </div>
+                <div>
+                  <label>Custo unitário (R$)</label>
+                  <input type="number" step="0.0001" min="0" {...register('valorUnitario')} placeholder="Opcional" />
+                  <FieldError message={errors.valorUnitario?.message} />
+                  {valorTotalPreview !== null && (
+                    <small style={{ display: 'block', marginTop: 4, color: 'var(--steel-2)', fontFamily: 'var(--font-mono)' }}>
+                      Total desta entrada: {formatCurrency(valorTotalPreview)}
+                    </small>
+                  )}
+                </div>
+              </>
+            )}
           </div>
           <div className="form-actions">
             <button type="submit" className="btn btn-primary" disabled={isSubmitting}>{isSubmitting ? 'Registrando...' : 'Registrar movimentação'}</button>
@@ -184,23 +176,26 @@ export default function MovementsPage() {
 
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Data/Hora</th><th>Tipo</th><th>Produto</th><th>Qtd</th><th>Responsável</th><th>Referência</th>{canAdjust && <th>Ações</th>}</tr></thead>
+          <thead><tr><th>Data/Hora</th><th>Tipo</th><th>Produto</th><th>Qtd</th><th>NF</th><th>Fornecedor</th><th>Valor</th><th>Responsável</th><th>Referência</th>{canAdjust && <th>Ações</th>}</tr></thead>
           <tbody>
             {loading ? (
-              <EmptyTableRow colSpan={7}><LoadingInline /></EmptyTableRow>
+              <EmptyTableRow colSpan={10}><LoadingInline /></EmptyTableRow>
             ) : items.length === 0 ? (
-              <EmptyTableRow colSpan={7}>Nenhuma movimentação encontrada.</EmptyTableRow>
+              <EmptyTableRow colSpan={10}>Nenhuma movimentação encontrada.</EmptyTableRow>
             ) : items.map((m) => (
               <tr key={m.id}>
                 <td className="mono">{formatDateTime(m.data_movimentacao)}</td>
                 <td>{m.type === 'entrada' ? '📥 Entrada' : '📤 Saída'}{m.adjustment_of && <span style={{ marginLeft: 6, fontSize: 10.5, color: 'var(--steel-2)' }}>(ajuste)</span>}</td>
                 <td className="mono">{m.produto_codigo} — {m.produto_nome}</td>
                 <td className="mono">{formatNumber(m.quantidade)}</td>
+                <td className="mono">{m.numero_nf || '-'}</td>
+                <td>{m.fornecedor || '-'}</td>
+                <td className="mono">{m.valor_total !== null && m.valor_total !== undefined ? formatCurrency(m.valor_total) : '-'}</td>
                 <td>{m.responsavel}</td>
                 <td>{m.referencia || '-'}</td>
                 {canAdjust && (
                   <td className="actions-cell">
-                    <button className="btn btn-ghost btn-sm" onClick={() => { setAdjusting(m); adjustForm.reset({ type: 'entrada', quantidade: '', justificativa: '' }); }}>Corrigir</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setAdjusting(m); adjustForm.reset({ type: 'entrada', quantidade: '', justificativa: '', fornecedor: '', numeroNf: '', valorUnitario: '' }); }}>Corrigir</button>
                   </td>
                 )}
               </tr>
@@ -232,6 +227,22 @@ export default function MovementsPage() {
                   <input type="number" step="0.01" {...adjustForm.register('quantidade')} />
                   <FieldError message={adjustForm.formState.errors.quantidade?.message} />
                 </div>
+                {tipoAjusteAtual === 'entrada' && (
+                  <>
+                    <div>
+                      <label>Fornecedor</label>
+                      <input {...adjustForm.register('fornecedor')} placeholder="Opcional" />
+                    </div>
+                    <div>
+                      <label>Nº da Nota Fiscal</label>
+                      <input {...adjustForm.register('numeroNf')} placeholder="Opcional" />
+                    </div>
+                    <div>
+                      <label>Custo unitário (R$)</label>
+                      <input type="number" step="0.0001" min="0" {...adjustForm.register('valorUnitario')} placeholder="Opcional" />
+                    </div>
+                  </>
+                )}
               </div>
               <div style={{ marginBottom: 16 }}>
                 <label>Justificativa (obrigatória)</label>

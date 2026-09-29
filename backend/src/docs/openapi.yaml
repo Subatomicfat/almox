@@ -35,6 +35,8 @@ components:
         unidade: { type: string, example: "un" }
         estoque_minimo: { type: number }
         estoque_atual: { type: number }
+        custo_medio: { type: number, description: "Custo médio ponderado móvel — recalculado a cada entrada com custo informado." }
+        valor_estoque: { type: number, description: "Calculado pelo banco: estoque_atual × custo_medio." }
     Movement:
       type: object
       properties:
@@ -43,6 +45,10 @@ components:
         type: { type: string, enum: [entrada, saida] }
         quantidade: { type: number }
         referencia: { type: string }
+        fornecedor: { type: string, description: "Só relevante em entrada." }
+        numero_nf: { type: string, description: "Número da nota fiscal — só relevante em entrada." }
+        valor_unitario: { type: number, description: "Em entrada, digitado pelo usuário. Em saída, travado automaticamente no custo médio do produto no momento — nunca digitado." }
+        valor_total: { type: number, description: "Calculado pelo banco: quantidade × valor_unitario." }
         data_movimentacao: { type: string, format: date-time }
 paths:
   /auth/login:
@@ -194,8 +200,26 @@ paths:
                 referencia: { type: string }
                 observacao: { type: string }
                 vehiclePlaca: { type: string }
+                fornecedor: { type: string, description: "Só usado quando type=entrada." }
+                numeroNf: { type: string, description: "Só usado quando type=entrada." }
+                valorUnitario: { type: number, description: "Só usado quando type=entrada — em saída é ignorado, o backend trava no custo médio atual." }
       responses:
         '201':
           description: Movimentação registrada
         '400':
           description: Saída maior que o estoque atual
+
+  /reports/kardex/{productId}:
+    get:
+      summary: Ficha Kardex de um produto — histórico completo com saldo (qtd. e valor) acumulado
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: productId
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Produto + histórico de movimentações com saldo_qtd e saldo_valor calculados linha a linha
+        '404':
+          description: Produto não encontrado
